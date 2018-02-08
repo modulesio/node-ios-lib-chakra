@@ -32,25 +32,6 @@ cp $LIBRARY_PATH/libopenssl.a $TARGET_LIBRARY_PATH/
 cp $LIBRARY_PATH/libuv.a $TARGET_LIBRARY_PATH/
 cp $LIBRARY_PATH/libzlib.a $TARGET_LIBRARY_PATH/
 
-make clean
-
-TARGET_LIBRARY_PATH='tools/ios-framework/bin/x64'
-
-./configure --dest-os=ios --dest-cpu=x64 --without-chakra-jit --enable-static --with-intl=none --openssl-no-asm
-make -j$(getconf _NPROCESSORS_ONLN)
-
-mkdir -p $TARGET_LIBRARY_PATH
-
-cp $LIBRARY_PATH/libcares.a $TARGET_LIBRARY_PATH/
-cp $LIBRARY_PATH/libChakraCoreStatic.a $TARGET_LIBRARY_PATH/
-cp $LIBRARY_PATH/libchakrashim.a $TARGET_LIBRARY_PATH/
-cp $LIBRARY_PATH/libhttp_parser.a $TARGET_LIBRARY_PATH/
-cp $LIBRARY_PATH/libnghttp2.a $TARGET_LIBRARY_PATH/
-cp $LIBRARY_PATH/libnode.a $TARGET_LIBRARY_PATH/
-cp $LIBRARY_PATH/libopenssl.a $TARGET_LIBRARY_PATH/
-cp $LIBRARY_PATH/libuv.a $TARGET_LIBRARY_PATH/
-cp $LIBRARY_PATH/libzlib.a $TARGET_LIBRARY_PATH/
-
 TARGET_LIBRARY_PATH='tools/ios-framework/bin'
 
 lipo -create "$TARGET_LIBRARY_PATH/arm64/libcares.a" "$TARGET_LIBRARY_PATH/x64/libcares.a" -output "$TARGET_LIBRARY_PATH/libcares.a"
@@ -73,7 +54,6 @@ cd ../
 NODELIB_PROJECT_PATH='tools/ios-framework'
 
 xcodebuild build -project $NODELIB_PROJECT_PATH/NodeMobile.xcodeproj -target "NodeMobile" -configuration Release -arch arm64 -sdk "iphoneos" SYMROOT=$FRAMEWORK_TARGET_DIR
-xcodebuild build -project $NODELIB_PROJECT_PATH/NodeMobile.xcodeproj -target "NodeMobile" -configuration Release -arch x86_64 -sdk "iphonesimulator" SYMROOT=$FRAMEWORK_TARGET_DIR
 cp -RL $FRAMEWORK_TARGET_DIR/Release-iphoneos $FRAMEWORK_TARGET_DIR/Release-universal
 lipo -create $FRAMEWORK_TARGET_DIR/Release-iphoneos/NodeMobile.framework/NodeMobile $FRAMEWORK_TARGET_DIR/Release-iphonesimulator/NodeMobile.framework/NodeMobile -output $FRAMEWORK_TARGET_DIR/Release-universal/NodeMobile.framework/NodeMobile
 
