@@ -13,8 +13,6 @@ cd ../
 
 LIBRARY_PATH='out/Release'
 
-make clean
-
 TARGET_LIBRARY_PATH='tools/ios-framework/bin/arm64'
 
 ./configure --dest-os=ios --dest-cpu=arm64 --without-chakra-jit --enable-static --with-intl=none --openssl-no-asm
@@ -54,8 +52,6 @@ cd ../
 NODELIB_PROJECT_PATH='tools/ios-framework'
 
 xcodebuild build -project $NODELIB_PROJECT_PATH/NodeMobile.xcodeproj -target "NodeMobile" -configuration Release -arch arm64 -sdk "iphoneos" SYMROOT=$FRAMEWORK_TARGET_DIR
-cp -RL $FRAMEWORK_TARGET_DIR/Release-iphoneos $FRAMEWORK_TARGET_DIR/Release-universal
-lipo -create $FRAMEWORK_TARGET_DIR/Release-iphoneos/NodeMobile.framework/NodeMobile $FRAMEWORK_TARGET_DIR/Release-iphonesimulator/NodeMobile.framework/NodeMobile -output $FRAMEWORK_TARGET_DIR/Release-universal/NodeMobile.framework/NodeMobile
 
 echo "Frameworks built to $FRAMEWORK_TARGET_DIR"
 
