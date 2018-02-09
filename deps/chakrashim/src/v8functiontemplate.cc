@@ -346,6 +346,15 @@ Local<FunctionTemplate> FunctionTemplate::New(Isolate* isolate,
   }
   return Local<FunctionTemplate>::New(functionTemplateRef);
 }
+  
+Local<FunctionTemplate> FunctionTemplate::New(Isolate* isolate,
+                                                FunctionCallback callback,
+                                                Local<Value> data,
+                                                Local<Signature> signature,
+                                                int length,
+                                                v8::ConstructorBehavior constructorBehavior) {
+  return FunctionTemplate::New(isolate, callback, data, signature, length);
+}
 
 MaybeLocal<Function> FunctionTemplate::GetFunction(Local<Context> context) {
   FunctionTemplateData* functionTemplateData = nullptr;

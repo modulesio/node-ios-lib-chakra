@@ -3779,6 +3779,9 @@ class V8_EXPORT Function : public Object {
       Local<Context> context, FunctionCallback callback,
       Local<Value> data = Local<Value>(), int length = 0,
       ConstructorBehavior behavior = ConstructorBehavior::kAllow);
+  static MaybeLocal<Function> New(
+                                  Local<Context> context, FunctionCallback callback,
+                                  Local<Value> data = Local<Value>(), int length = 0);
   static V8_DEPRECATE_SOON(
       "Use maybe version",
       Local<Function> New(Isolate* isolate, FunctionCallback callback,

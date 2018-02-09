@@ -708,6 +708,10 @@ Local<ObjectTemplate> ObjectTemplate::New(Isolate* isolate) {
 
   return Local<ObjectTemplate>::New(objectTemplateRef);
 }
+  
+Local<ObjectTemplate> ObjectTemplate::New(Isolate* isolate, Local<FunctionTemplate> functionTemplate) {
+  return ObjectTemplate::New(isolate);
+}
 
 JsValueRef CHAKRA_CALLBACK GetSelf(
     JsValueRef callee,

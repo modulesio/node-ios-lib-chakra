@@ -2212,6 +2212,10 @@ class V8_EXPORT FunctionTemplate : public Template {
       Isolate* isolate, FunctionCallback callback = 0,
       Local<Value> data = Local<Value>(),
       Local<Signature> signature = Local<Signature>(), int length = 0);
+  static Local<FunctionTemplate> New(
+       Isolate* isolate, FunctionCallback callback,
+       Local<Value> data,
+                                     Local<Signature> signature, int length, ConstructorBehavior constructorBehavior);
 
   V8_DEPRECATE_SOON("Use maybe version", Local<Function> GetFunction());
   V8_WARN_UNUSED_RESULT MaybeLocal<Function> GetFunction(
@@ -2290,6 +2294,7 @@ struct IndexedPropertyHandlerConfiguration {
 class V8_EXPORT ObjectTemplate : public Template {
  public:
   static Local<ObjectTemplate> New(Isolate* isolate);
+  static Local<ObjectTemplate> New(Isolate* isolate, Local<FunctionTemplate> functionTemplate);
 
   V8_DEPRECATE_SOON("Use maybe version", Local<Object> NewInstance());
   V8_WARN_UNUSED_RESULT MaybeLocal<Object> NewInstance(Local<Context> context);

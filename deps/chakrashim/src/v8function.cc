@@ -47,6 +47,13 @@ MaybeLocal<Function> Function::New(Local<Context> context,
   return Local<Function>(funcTemplate->GetFunction());
 }
 
+Local<Function> Function::New(Isolate* isolate,
+  FunctionCallback callback,
+  Local<Value> data,
+  int length) {
+    return Function::New(isolate->GetCurrentContext(), callback, data, length).ToLocalChecked();
+}
+
 MaybeLocal<Object> Function::NewInstance(Local<Context> context,
                                          int argc, Handle<Value> argv[]) const {
   jsrt::JsArguments<> args(argc + 1);
