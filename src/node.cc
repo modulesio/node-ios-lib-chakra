@@ -5211,6 +5211,240 @@ int Start(int argc, char** argv) {
   return exit_code;
 }
 
+NodeService::NodeService(int argc, char** argv, void (*initEnv)(NodeService *service)) {
+  // Part 1
+  atexit([] () { uv_tty_reset_mode(); });
+  PlatformInit();
+  node::performance::performance_node_start = PERFORMANCE_NOW();
+
+  CHECK_GT(argc, 0);
+
+  // Hack around with the argv pointer. Used for process.title = "blah".
+  argv = uv_setup_args(argc, argv);
+
+  // This needs to run *before* V8::Initialize().  The const_cast is not
+  // optional, in case you're wondering.
+  int exec_argc;
+  const char** exec_argv;
+  Init(&argc, const_cast<const char**>(argv), &exec_argc, &exec_argv);
+
+#if HAVE_OPENSSL
+  {
+    std::string extra_ca_certs;
+    if (SafeGetenv("NODE_EXTRA_CA_CERTS", &extra_ca_certs))
+      crypto::UseExtraCaCerts(extra_ca_certs);
+  }
+#ifdef NODE_FIPS_MODE
+  // In the case of FIPS builds we should make sure
+  // the random source is properly initialized first.
+  OPENSSL_init();
+#endif  // NODE_FIPS_MODE
+  // V8 on Windows doesn't have a good source of entropy. Seed it from
+  // OpenSSL's pool.
+  V8::SetEntropySource(crypto::EntropySource);
+#endif  // HAVE_OPENSSL
+
+  v8_platform.Initialize(v8_thread_pool_size, uv_default_loop());
+
+#ifndef NODE_ENGINE_CHAKRACORE
+  // Enable tracing when argv has --trace-events-enabled.
+  if (trace_enabled) {
+    fprintf(stderr, "Warning: Trace event is an experimental feature "
+            "and could change at any time.\n");
+    v8_platform.StartTracingAgent();
+  }
+#else
+  if (trace_enabled) {
+    fprintf(stderr, "Warning: Tracing is not supported in node-chakracore");
+    trace_enabled = false;
+  }
+#endif
+
+  V8::Initialize();
+  node::performance::performance_v8_start = PERFORMANCE_NOW();
+  v8_initialized = true;
+
+  uv_loop_t* event_loop = uv_default_loop();
+
+  // Part 2
+  Isolate::CreateParams params;
+  ArrayBufferAllocator *allocator = new ArrayBufferAllocator();
+  params.array_buffer_allocator = allocator;
+#ifdef NODE_ENABLE_VTUNE_PROFILING
+  params.code_event_handler = vTune::GetVtuneCodeEventHandler();
+#endif
+
+  isolate = Isolate::New(params);
+
+  if (isolate == nullptr)
+    abort();  // Signal internal error.
+
+  isolate->AddMessageListener(OnMessage);
+  isolate->SetAbortOnUncaughtExceptionCallback(ShouldAbortOnUncaughtException);
+  isolate->SetAutorunMicrotasks(false);
+  isolate->SetFatalErrorHandler(OnFatalError);
+
+  if (track_heap_objects) {
+    isolate->GetHeapProfiler()->StartTrackingHeapObjects(true);
+  }
+
+  {
+    Mutex::ScopedLock scoped_lock(node_isolate_mutex);
+    CHECK_EQ(node_isolate, nullptr);
+    node_isolate = isolate;
+  }
+
+  {
+    Locker locker(isolate);
+    Isolate::Scope isolate_scope(isolate);
+    HandleScope handle_scope(isolate);
+
+    // Node-ChakraCore requires the context to be created before the
+    // IsolateData is created
+    // So for the Node-ChakraCore case, we just populate a context
+    // that we use later, to create the IsolateData after the v8 Context
+    // has been created.
+    // Node-ChakraCore-TODO: Fix this. Also, why does the isolate data
+    // need to be populated before the context is created?
+    void* isolate_data_ptr = nullptr;
+
+#ifndef NODE_ENGINE_CHAKRACORE
+    isolate_data_ptr = new IsolateData(isolate, event_loop, allocator->zero_fill_field());
+#else
+    isolate_data_ptr = new ChakraShimIsolateContext(event_loop,
+                            allocator->zero_fill_field());
+#endif
+
+    void *isolate_context = isolate_data_ptr;
+
+    // Part 3
+    {
+      HandleScope handle_scope(isolate);
+      Local<Context> localContext = Context::New(isolate);
+      context.Set(isolate, localContext);
+      Context::Scope context_scope(localContext);
+
+    #ifdef NODE_ENGINE_CHAKRACORE
+      ChakraShimIsolateContext* chakra_isolate_context =
+        reinterpret_cast<ChakraShimIsolateContext*>(isolate_context);
+
+      IsolateData* isolate_data = new IsolateData(isolate, chakra_isolate_context->event_loop,
+                                       chakra_isolate_context->zero_fill_field);
+    #else
+      IsolateData* isolate_data = reinterpret_cast<IsolateData*>(isolate_context);
+    #endif
+
+      env = new Environment(isolate_data, localContext);
+      CHECK_EQ(0, uv_key_create(&thread_local_env));
+      uv_key_set(&thread_local_env, env);
+      env->Start(argc, argv, exec_argc, exec_argv, v8_is_profiling);
+
+      const char* path = argc > 1 ? argv[1] : nullptr;
+      StartInspector(env, path, debug_options);
+
+      if (debug_options.inspector_enabled() && !v8_platform.InspectorStarted(env))
+        abort();  // Signal internal error.
+
+      env->set_abort_on_uncaught_exception(abort_on_uncaught_exception);
+
+      {
+        Environment::AsyncCallbackScope callback_scope(env);
+        env->async_hooks()->push_ids(1, 0);
+        initEnv(this);
+        LoadEnvironment(env);
+        env->async_hooks()->pop_ids(1);
+      }
+
+      env->set_trace_sync_io(trace_sync_io);
+
+      {
+        SealHandleScope seal(isolate);
+        PERFORMANCE_MARK(env, LOOP_START);
+      }
+    }
+  }
+  
+  // uv_idle_init(env->event_loop(), &idle);
+  uv_timer_init(env->event_loop(), &timer);
+}
+    
+NodeService::~NodeService() {
+  // uv_close((uv_handle_t *)(&timer), nullptr);
+  {
+    SealHandleScope seal(isolate);
+    PERFORMANCE_MARK(env, LOOP_EXIT);
+  }
+
+  env->set_trace_sync_io(false);
+
+  const int exit_code = EmitExit(env);
+  RunAtExit(env);
+  uv_key_delete(&thread_local_env);
+
+  v8_platform.DrainVMTasks();
+  WaitForInspectorDisconnect(env);
+#if defined(LEAK_SANITIZER)
+  __lsan_do_leak_check();
+#endif
+}
+
+void NodeService::Scope(void (*fn)()) {
+  Locker locker(isolate);
+  Isolate::Scope isolate_scope(isolate);
+  HandleScope handle_scope(isolate);
+  Local<Context> localContext = context.Get(isolate);
+  Context::Scope context_scope(localContext);
+  
+  fn();
+}
+
+Isolate *nodeServiceTickIsolate;
+Environment *nodeServiceTickEnv;
+uv_timer_t *nodeServiceTimer;
+unsigned int nodeServiceTimeout;
+bool nodeServiceTimedOut;
+bool nodeServiceTickResult;
+void nodeServiceTimeoutCb(uv_timer_t *pTimer) {
+  nodeServiceTimedOut = true;
+  
+  uv_timer_stop(pTimer);
+}
+bool NodeService::Tick(unsigned int timeout) {
+  nodeServiceTickIsolate = isolate;
+  nodeServiceTickEnv = env;
+  nodeServiceTimer = &timer;
+  nodeServiceTimeout = timeout;
+  
+  this->Scope([]() {
+      SealHandleScope seal(nodeServiceTickIsolate);
+      
+      nodeServiceTimedOut = false;
+      uv_timer_start(nodeServiceTimer, nodeServiceTimeoutCb, nodeServiceTimeout, 0);
+      
+      bool isAlive = true;
+      while (isAlive && !nodeServiceTimedOut) {
+          uv_run(nodeServiceTickEnv->event_loop(), UV_RUN_ONCE);
+          
+          v8_platform.DrainVMTasks();
+          
+          isAlive = uv_loop_alive(nodeServiceTickEnv->event_loop());
+      }
+      
+      nodeServiceTickResult = isAlive;
+  });
+  
+  return nodeServiceTickResult;
+}
+
+v8::Isolate *NodeService::GetIsolate() {
+  return isolate;
+}
+Environment *NodeService::GetEnvironment() {
+  return env;
+}
+v8::Local<v8::Context> NodeService::GetContext() {
+  return context.Get(isolate);
+}
 
 }  // namespace node
 
