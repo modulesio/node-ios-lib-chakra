@@ -5423,8 +5423,8 @@ bool NodeService::Tick(unsigned int timeout) {
       
       bool isAlive = true;
       while (isAlive && !nodeServiceTimedOut) {
-          uv_run(nodeServiceTickEnv->event_loop(), UV_RUN_ONCE);
-          
+          uv_run(nodeServiceTickEnv->event_loop(), UV_RUN_NOWAIT);
+
           v8_platform.DrainVMTasks();
           
           isAlive = uv_loop_alive(nodeServiceTickEnv->event_loop());
