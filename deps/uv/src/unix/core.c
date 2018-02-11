@@ -323,7 +323,11 @@ int uv_backend_timeout(const uv_loop_t* loop) {
   if (loop->closing_handles)
     return 0;
 
-  return uv__next_timeout(loop);
+  int result = uv__next_timeout(loop);
+  if (result > 10) {
+    result = 10;
+  }
+  return result;
 }
 
 
